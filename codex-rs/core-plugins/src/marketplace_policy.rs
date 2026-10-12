@@ -548,7 +548,15 @@ fn is_expected_managed_path(path: &Path, expected: &Path) -> bool {
                 path.eq_ignore_ascii_case(&expected.replace('/', "\\"))
             })
     }
-    #[cfg(not(any(target_os = "macos", windows)))]
+    #[cfg(target_os = "linux")]
+    {
+        // Resolve only the trusted managed root: /home can point to /var/home on Linux.
+        // Canonicalizing the supplied path would let arbitrary symlinks claim provenance.
+        expected
+            .canonicalize()
+            .is_ok_and(|canonical_expected| path == canonical_expected)
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
     {
         false
     }
