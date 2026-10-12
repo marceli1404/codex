@@ -50,6 +50,46 @@ fn managed_windows_root_accepts_redirected_target_but_not_unowned_alias() {
     assert!(!is_expected_managed_path(&other, &owned));
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn managed_linux_root_accepts_canonical_home_but_not_unowned_alias() {
+    let temp = TempDir::new().unwrap();
+    let physical_home = temp.path().join("var/home");
+    let home_alias = temp.path().join("home");
+    fs::create_dir_all(&physical_home).unwrap();
+    std::os::unix::fs::symlink(&physical_home, &home_alias).unwrap();
+
+    let codex_home = home_alias.join("user/.codex");
+    let expected_root = codex_home
+        .join(".tmp/bundled-marketplaces")
+        .join(crate::OPENAI_BUNDLED_MARKETPLACE_NAME);
+    fs::create_dir_all(&expected_root).unwrap();
+    let canonical_root = expected_root.canonicalize().unwrap();
+
+    let unowned_alias = temp.path().join("unowned-alias");
+    std::os::unix::fs::symlink(&canonical_root, &unowned_alias).unwrap();
+
+    assert!(is_expected_managed_path(&expected_root, &expected_root));
+    assert!(is_expected_managed_path(&canonical_root, &expected_root));
+    assert!(!is_expected_managed_path(&unowned_alias, &expected_root));
+
+    let stack = ConfigLayerStack::default();
+    let canonical_source = parse_source(canonical_root.to_str().unwrap(), None);
+    assert_eq!(
+        validate_marketplace_source_for_add(
+            &codex_home,
+            stack.requirements(),
+            &canonical_source,
+        ),
+        Ok(Some(crate::OPENAI_BUNDLED_MARKETPLACE_NAME))
+    );
+    let unowned_source = parse_source(unowned_alias.to_str().unwrap(), None);
+    assert_eq!(
+        validate_marketplace_source_for_add(&codex_home, stack.requirements(), &unowned_source),
+        Ok(None)
+    );
+}
+
 fn config_layer_stack_with_user_config(
     requirements_toml: &str,
     user_config: Option<(&str, AbsolutePathBuf)>,
